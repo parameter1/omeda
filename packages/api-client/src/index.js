@@ -49,6 +49,7 @@ class OmedaApiClient {
    * @param {string} [params.inputId] The Omeda API input ID. Required when doing write calls.
    * @param {string} [params.useStaging=false] Whether to use the staging API.
    * @param {OmedaApiCacheInterface} [params.cache] A response cache implementation.
+   * @param {function} [params.requestLogger] A function to call on API requests.
    */
   constructor({
     appId,
@@ -57,6 +58,7 @@ class OmedaApiClient {
     inputId,
     useStaging = false,
     cache,
+    requestLogger,
   } = {}) {
     if (!appId) throw new Error('The Omeda API App ID is required.');
     if (!brand) throw new Error('The Omeda brand abbreviation is required.');
@@ -72,6 +74,7 @@ class OmedaApiClient {
       customer: new CustomerResource({ client: this }),
       email: new EmailResource({ client: this }),
     };
+    this.requestLogger = requestLogger;
   }
 
   /**
@@ -235,7 +238,7 @@ class OmedaApiClient {
     const url = useClientUrl ? this.clientUrl(endpoint) : this.brandUrl(endpoint);
 
     const iid = inputId || this.inputId;
-    const response = await fetch(url, {
+    const params = {
       method,
       headers: {
         'x-omeda-appid': this.appId,
@@ -244,7 +247,12 @@ class OmedaApiClient {
         ...(body && { 'content-type': 'application/json' }),
       },
       ...(body && { body: JSON.stringify(body) }),
-    });
+    };
+
+    const { requestLogger } = this;
+    if (typeof requestLogger === 'function') requestLogger({ url, params });
+
+    const response = await fetch(url, params);
     const { responseBody, contentType } = await OmedaApiClient.parseResponseBody(response);
     const time = OmedaApiClient.calculateTime(start);
     if (response.ok) {
