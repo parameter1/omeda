@@ -250,7 +250,15 @@ class OmedaApiClient {
     };
 
     const { requestLogger } = this;
-    if (typeof requestLogger === 'function') requestLogger({ url, params });
+    if (typeof requestLogger === 'function') {
+      requestLogger({
+        url,
+        params,
+        brand: this.brand,
+        clientAbbrev: this.clientAbbrev,
+        useStaging: this.useStaging,
+      });
+    }
 
     const response = await fetch(url, params);
     const { responseBody, contentType } = await OmedaApiClient.parseResponseBody(response);
