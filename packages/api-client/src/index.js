@@ -253,6 +253,7 @@ class OmedaApiClient {
     if (typeof requestLogger === 'function') {
       requestLogger({
         endpoint: cleanPath(endpoint),
+        type: useClientUrl ? 'client' : 'brand',
         url,
         params,
         brand: this.brand,
