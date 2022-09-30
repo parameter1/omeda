@@ -252,6 +252,7 @@ class OmedaApiClient {
     const { requestLogger } = this;
     if (typeof requestLogger === 'function') {
       requestLogger({
+        endpoint: cleanPath(endpoint),
         url,
         params,
         brand: this.brand,
