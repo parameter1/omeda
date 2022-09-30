@@ -1,6 +1,6 @@
 {
   "name": "@parameter1/omeda-graphql-service",
-  "version": "1.5.1",
+  "version": "1.5.2",
   "description": "A fully-featured GraphQL API server that uses Omeda's REST API and data from MongoDB",
   "main": "src/index.js",
   "author": "Jacob Bare <jacob@parameter1.com>",
@@ -20,8 +20,8 @@
   "dependencies": {
     "@parameter1/graphql-mongodb-pagination": "^2.2.15",
     "@parameter1/joi": "^1.2.10",
-    "@parameter1/omeda-api-cache-ioredis": "^1.5.1",
-    "@parameter1/omeda-api-client": "^1.5.1",
+    "@parameter1/omeda-api-cache-ioredis": "^1.5.2",
+    "@parameter1/omeda-api-client": "^1.5.2",
     "@parameter1/omeda-mongodb": "^1.3.0",
     "@parameter1/terminus": "^1.10.0",
     "@parameter1/utils": "^1.1.24",
