@@ -30,7 +30,7 @@ class CustomerResource extends AbstractResource {
       startDate: Joi.date().required(),
       endDate: Joi.date().required().default(() => new Date()),
     }).required(), params);
-    const now = new Date(Date.now() - 60 * 1000); // clock drift
+    const now = new Date();
     const format = 'MMDDYYYY_HHmm';
     const start = dayjs.tz(startDate, 'America/Chicago').format(format);
     const end = dayjs.tz(endDate > now ? now : endDate, 'America/Chicago').format(format);
