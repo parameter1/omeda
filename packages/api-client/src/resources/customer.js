@@ -357,6 +357,36 @@ class CustomerResource extends AbstractResource {
       response,
     };
   }
+
+  /**
+   * @todo Validate/format the body object.
+   * @todo Determine the response to return
+   *
+   * @param {object} params
+   * @param {object} params.body
+   * @param {string} [params.inputId] An input ID to use. Overrides the default.
+   * @returns {Promise<object>}
+   */
+  async assignBehavior(params = {}) {
+    const { body } = await validateAsync(Joi.object({
+      body: Joi.object().required(),
+    }).required(), params);
+    // const endpoint = '/assignbehavior/*';
+    const response = {
+      ResponseInfo: [
+        {
+          Message: 'SUCCESS',
+          OmedaCustomerId: 1133327436,
+          Url: 'https://ows.omeda.com/webservices/rest/brand/RRPCD/customer/1133327436/*',
+        }
+      ],
+      SubmissionId: 'd96b1de0-fd40-48a6-8e5a-29f9dcf0e04c',
+    }; // await this.client.post({ endpoint, body });
+    return {
+      data: getAsObject(response, 'json.ResponseInfo.0'),
+      response,
+    };
+  }
 }
 
 module.exports = CustomerResource;
