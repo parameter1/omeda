@@ -378,7 +378,7 @@ class CustomerResource extends AbstractResource {
           Message: 'SUCCESS',
           OmedaCustomerId: 1133327436,
           Url: 'https://ows.omeda.com/webservices/rest/brand/RRPCD/customer/1133327436/*',
-        }
+        },
       ],
       SubmissionId: 'd96b1de0-fd40-48a6-8e5a-29f9dcf0e04c',
     }; // await this.client.post({ endpoint, body });
