@@ -371,7 +371,7 @@ module.exports = {
 
       const promoCode = input.promoCode ? input.promoCode.trim() : null;
       if (promoCode && promoCode.length > 50) throw new UserInputError('The promo code must be 50 characters or fewer.');
-      const productMap = new Map([[input.productId, true]]);
+      const productMap = input.productId ? new Map([[input.productId, true]]) : new Map([]);
 
       const deploymentTypeIdMap = input.deploymentTypeIds.reduce((map, id) => {
         map.set(id, true);
@@ -434,10 +434,12 @@ module.exports = {
 
       const body = {
         RunProcessor: 1,
-        Products: [...productMap].map(([OmedaProductId, Receive]) => ({
-          OmedaProductId,
-          Receive: Number(Receive),
-        })),
+        ...(productMap && {
+          Products: [...productMap].map(([OmedaProductId, Receive]) => ({
+            OmedaProductId,
+            Receive: Number(Receive),
+          })),
+        }),
         Emails: [{ EmailAddress: email }],
         ...(phones.length && { Phones: phones }),
         ...(firstName && { FirstName: firstName }),
@@ -573,7 +575,7 @@ module.exports = {
       const { emailAddress, productId } = input;
       const { data } = await apiClient.resource('customer').lookupByEmailAddress({
         emailAddress,
-        productId,
+        ...(productId && { productId }),
       });
       if (!data.size) return [];
       const customerIds = [...data];
