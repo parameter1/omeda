@@ -465,29 +465,40 @@ module.exports = {
             ...(demo.writeInValue && { WriteInDesc: demo.writeInValue }),
           })),
         }),
-        ...(behaviors.length && {
-          CustomerBehaviors: behaviors.map(({ id, date, attributes }) => ({
-            BehaviorId: id,
-            BehaviorDate: dayjs(date || new Date()).format('YYYY-MM-DD HH:mm:ss'),
-            ...(attributes.length && {
-              BehaviorAttributes: attributes.map((attr) => {
-                if (!attr.valueId && !attr.value) throw new UserInputError('One of `valueId` or `value` must be specified for behavior attribute!');
-                if (attr.valueId && attr.value) throw new UserInputError('Only one of `valueId` and `value` can be specified for behavior attribute!');
-                return {
-                  BehaviorAttributeTypeId: attr.id,
-                  ...(attr.valueId && { BehaviorAttributeValueId: attr.valueId }),
-                  ...(attr.value && { BehaviorAttributeValue: attr.value }),
-                };
-              }),
-            }),
-          })),
-        }),
         ...(promoCode && { PromoCode: promoCode }),
       };
+
+      // Look up customer by emailAddress
+      // Only RapidIdent if the nothing is returned or if there are demo/products to send
+      const { data: OmedaCustomerIdData } = await apiClient.resource('customer').lookupByEmailAddress({ emailAddress: email });
+      const OmedaCustomerId = (OmedaCustomerIdData.size) ? [...OmedaCustomerIdData][0] : undefined;
+
+      const CustomerBehavior = behaviors.length ? behaviors.map(({ id, date, attributes }) => ({
+        BehaviorId: id,
+        BehaviorDate: dayjs(date || new Date()).format('YYYY-MM-DD HH:mm:ss'),
+        ...(attributes.length && {
+          BehaviorAttributes: attributes.map((attr) => {
+            if (!attr.valueId && !attr.value) throw new UserInputError('One of `valueId` or `value` must be specified for behavior attribute!');
+            if (attr.valueId && attr.value) throw new UserInputError('Only one of `valueId` and `value` can be specified for behavior attribute!');
+            return {
+              BehaviorAttributeTypeId: attr.id,
+              ...(attr.valueId && { BehaviorAttributeValueId: attr.valueId }),
+              ...(attr.value && { BehaviorAttributeValue: attr.value }),
+            };
+          }),
+        }),
+      })) : null;
+
       const [response] = await Promise.all([
         apiClient.resource('customer').storeCustomerAndOrder({
           body,
           inputId: input.inputId,
+        }),
+        apiClient.resource('customer').assignBehavior({
+          body: {
+            OmedaCustomerId,
+            CustomerBehavior,
+          },
         }),
         (async () => {
           if (!deploymentTypeOptInMap.size) return null;
@@ -516,6 +527,7 @@ module.exports = {
           ]);
         })(),
       ]);
+
       return response.data;
     },
   },
