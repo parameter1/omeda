@@ -174,6 +174,25 @@ type EmailDeploymentClickLink {
   totalClicks: Int! @apiValue
   linkURL: String! @apiValue
   clicks: [EmailDeploymentClickInfo!]! @apiValue(path: "clicks", as: ARRAY)
+  unrealClicks: [EmailDeploymentUnrealClickInfo!]! @apiValue(path: "unrealClicks", as: ARRAY)
+}
+
+type EmailDeploymentUnrealClickInfo {
+  firstName: String @apiValue
+  lastName: String @apiValue
+  customerId: Int @apiValue
+  encryptedCustomerId: String @apiValue
+  emailAddress: String! @apiValue
+  keyword: String @apiValue
+  category: String @apiValue
+  categoryValue: String @apiValue
+  reasons: [EmailDeploymentUnrealClickReason!]! @apiValue(path: "UnrealClicks", as: ARRAY)
+}
+
+type EmailDeploymentUnrealClickReason {
+  numberOfUnrealClicks: Int! @apiValue
+  clickDate: DateTime! @apiValue
+  reason: Int! @apiValue
 }
 
 type EmailDeploymentClickInfo {
@@ -181,7 +200,7 @@ type EmailDeploymentClickInfo {
   clickDate: DateTime! @apiValue
   firstName: String @apiValue
   lastName: String @apiValue
-  customerId: String @apiValue
+  customerId: Int @apiValue
   encryptedCustomerId: String @apiValue
   emailAddress: String! @apiValue
   keyword: String @apiValue
