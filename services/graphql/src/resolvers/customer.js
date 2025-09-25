@@ -434,12 +434,12 @@ module.exports = {
       const body = {
         RunProcessor: 1,
         Products: [...productMap].map(([OmedaProductId, Receive]) => {
-          const product = subscriptions.find((obj) => obj.id === OmedaProductId);
+          const subscription = subscriptions.find((obj) => obj.id === OmedaProductId);
           return ({
             OmedaProductId,
             Receive: Number(Receive),
-            ...(product && product.requestedVersion && {
-              RequestedVersion: product.requestedVersion,
+            ...(subscription && subscription.requestedVersion && {
+              RequestedVersion: subscription.requestedVersion,
             }),
           });
         }),
