@@ -277,7 +277,7 @@ input RapidCustomerIdentificationSubscriptionInput {
   id: Int!
   "Whether the customer should receive this subscription."
   receive: Boolean!
-  "Which print version is requirest B(both), D(digital) or P(print)"
+  "Which print version is requested - B (Both), D (Digital) or P (Print)"
   requestedVersion: RequestedVersionEnum
 }
 
