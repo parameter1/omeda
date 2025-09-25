@@ -18,6 +18,12 @@ extend type Mutation {
   rapidCustomerIdentification(input: RapidCustomerIdentificationMutationInput!): RapidCustomerIdentification!
 }
 
+enum RequestedVersionEnum {
+  B
+  D
+  P
+}
+
 type ChangedCustomer {
   id: Int! @apiValue
   dateChanged: DateTime! @apiValue
@@ -271,6 +277,8 @@ input RapidCustomerIdentificationSubscriptionInput {
   id: Int!
   "Whether the customer should receive this subscription."
   receive: Boolean!
+  "Which print version is requested - B (Both), D (Digital) or P (Print)"
+  requestedVersion: RequestedVersionEnum
 }
 
 input RapidCustomerIdentificationDemographicInput {

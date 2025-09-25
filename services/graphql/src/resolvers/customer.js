@@ -431,13 +431,18 @@ module.exports = {
       if (phoneNumber) phones.push({ Number: phoneNumber, PhoneContactType: 200 });
       if (mobileNumber) phones.push({ Number: mobileNumber, PhoneContactType: 230 });
       if (faxNumber) phones.push({ Number: faxNumber, PhoneContactType: 240 });
-
       const body = {
         RunProcessor: 1,
-        Products: [...productMap].map(([OmedaProductId, Receive]) => ({
-          OmedaProductId,
-          Receive: Number(Receive),
-        })),
+        Products: [...productMap].map(([OmedaProductId, Receive]) => {
+          const product = subscriptions.find((obj) => obj.id === OmedaProductId);
+          return ({
+            OmedaProductId,
+            Receive: Number(Receive),
+            ...(product && product.requestedVersion && {
+              RequestedVersion: product.requestedVersion,
+            }),
+          });
+        }),
         Emails: [{ EmailAddress: email }],
         ...(phones.length && { Phones: phones }),
         ...(firstName && { FirstName: firstName }),
