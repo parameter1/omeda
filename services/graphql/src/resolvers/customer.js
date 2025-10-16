@@ -433,16 +433,19 @@ module.exports = {
       if (faxNumber) phones.push({ Number: faxNumber, PhoneContactType: 240 });
       const body = {
         RunProcessor: 1,
-        Products: [...productMap].map(([OmedaProductId, Receive]) => {
-          const subscription = subscriptions.find((obj) => obj.id === OmedaProductId);
-          return ({
-            OmedaProductId,
-            Receive: Number(Receive),
-            ...(subscription && subscription.requestedVersion && {
-              RequestedVersion: subscription.requestedVersion,
+        ...((productMap && productMap.length)
+          && {
+            Products: [...productMap].map(([OmedaProductId, Receive]) => {
+              const subscription = subscriptions.find((obj) => obj.id === OmedaProductId);
+              return ({
+                OmedaProductId,
+                Receive: Number(Receive),
+                ...(subscription && subscription.requestedVersion && {
+                  RequestedVersion: subscription.requestedVersion,
+                }),
+              });
             }),
-          });
-        }),
+          }),
         Emails: [{ EmailAddress: email }],
         ...(phones.length && { Phones: phones }),
         ...(firstName && { FirstName: firstName }),
