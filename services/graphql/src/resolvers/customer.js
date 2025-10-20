@@ -371,7 +371,7 @@ module.exports = {
 
       const promoCode = input.promoCode ? input.promoCode.trim() : null;
       if (promoCode && promoCode.length > 50) throw new UserInputError('The promo code must be 50 characters or fewer.');
-      const productMap = new Map([[input.productId, true]]);
+      const productMap = new Map([...(input.productId ? [[input.productId, true]] : [])]);
 
       const deploymentTypeIdMap = input.deploymentTypeIds.reduce((map, id) => {
         map.set(id, true);
@@ -433,16 +433,19 @@ module.exports = {
       if (faxNumber) phones.push({ Number: faxNumber, PhoneContactType: 240 });
       const body = {
         RunProcessor: 1,
-        Products: [...productMap].map(([OmedaProductId, Receive]) => {
-          const subscription = subscriptions.find((obj) => obj.id === OmedaProductId);
-          return ({
-            OmedaProductId,
-            Receive: Number(Receive),
-            ...(subscription && subscription.requestedVersion && {
-              RequestedVersion: subscription.requestedVersion,
+        ...((productMap && productMap.length)
+          && {
+            Products: [...productMap].map(([OmedaProductId, Receive]) => {
+              const subscription = subscriptions.find((obj) => obj.id === OmedaProductId);
+              return ({
+                OmedaProductId,
+                Receive: Number(Receive),
+                ...(subscription && subscription.requestedVersion && {
+                  RequestedVersion: subscription.requestedVersion,
+                }),
+              });
             }),
-          });
-        }),
+          }),
         Emails: [{ EmailAddress: email }],
         ...(phones.length && { Phones: phones }),
         ...(firstName && { FirstName: firstName }),
