@@ -215,7 +215,7 @@ input CustomerExternalIdsInput {
 
 input RapidCustomerIdentificationMutationInput {
   "The product ID to associate with this rapid identification."
-  productId: Int
+  productId: Int!
   "The customer's email address."
   email: String!
   "First name of customer, up to 100 characters long"
