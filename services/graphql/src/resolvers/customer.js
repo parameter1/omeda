@@ -371,7 +371,7 @@ module.exports = {
 
       const promoCode = input.promoCode ? input.promoCode.trim() : null;
       if (promoCode && promoCode.length > 50) throw new UserInputError('The promo code must be 50 characters or fewer.');
-      const productMap = new Map([[input.productId, true]]);
+      const productMap = new Map([...(input.productId ? [[input.productId, true]] : [])]);
 
       const deploymentTypeIdMap = input.deploymentTypeIds.reduce((map, id) => {
         map.set(id, true);
