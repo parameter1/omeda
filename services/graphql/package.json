@@ -1,6 +1,6 @@
 {
   "name": "@parameter1/omeda-graphql-service",
-  "version": "1.8.1",
+  "version": "1.8.2",
   "description": "A fully-featured GraphQL API server that uses Omeda's REST API and data from MongoDB",
   "main": "src/index.js",
   "author": "Jacob Bare <jacob@parameter1.com>",
