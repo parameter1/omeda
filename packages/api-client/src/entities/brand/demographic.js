@@ -9,7 +9,8 @@ const builder = ({ name, value, parent }) => {
     // force an empty array for non-choice demographics.
     // the Omeda API returns an array with a single value object, containing
     // an Id of 0 (which is invalid)
-    if (![1, 2].includes(parent.DemographicType)) return [];
+    // also include boolean values (type 5) since these also use value IDs
+    if (![1, 2, 5].includes(parent.DemographicType)) return [];
     return asArray(value).map((obj) => new DemographicValue(obj));
   }
   return null;
