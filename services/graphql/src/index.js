@@ -29,7 +29,7 @@ bootService({
     }
   },
   onSignal: () => mongodb.close(),
-  onHealthCheck: () => mongodb.ping({ id: pkg.name }).then(() => 'db okay'),
+  onHealthCheck: () => mongodb.command({ ping: 1 }),
 }).catch((e) => setImmediate(() => {
   newrelic.noticeError(e);
   throw e;
