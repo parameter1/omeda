@@ -295,6 +295,8 @@ input RapidCustomerIdentificationBehaviorInput {
   id: Int!
   "The date the behavior occurred."
   date: DateTime
+  "An optional promo code to associate with this specific behavior. Falls back to the top-level promoCode if not set."
+  behaviorPromoCode: String
   "An array of pre-defined key-values to send with the behavior."
   attributes: [RapidCustomerIdentificationBehaviorAttributeInput!]! = []
 }
