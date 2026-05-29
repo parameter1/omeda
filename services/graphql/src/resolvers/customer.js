@@ -469,10 +469,17 @@ module.exports = {
           })),
         }),
         ...(behaviors.length && {
-          CustomerBehaviors: behaviors.map(({ id, date, behaviorPromoCode, attributes }) => ({
+          CustomerBehaviors: behaviors.map(({
+            id,
+            date,
+            behaviorPromoCode,
+            attributes,
+          }) => ({
             BehaviorId: id,
             BehaviorDate: dayjs(date || new Date()).format('YYYY-MM-DD HH:mm:ss'),
-            ...((behaviorPromoCode || promoCode) && { BehaviorPromoCode: behaviorPromoCode || promoCode }),
+            ...((behaviorPromoCode || promoCode) && {
+              BehaviorPromoCode: behaviorPromoCode || promoCode,
+            }),
             ...(attributes.length && {
               BehaviorAttributes: attributes.map((attr) => {
                 if (!attr.valueId && !attr.value) throw new UserInputError('One of `valueId` or `value` must be specified for behavior attribute!');
