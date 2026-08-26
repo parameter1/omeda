@@ -266,21 +266,27 @@ input RapidCustomerIdentificationMutationInput {
   "An optional input ID to use when identifying."
   inputId: Int
   """
-  An optional *encrypted* Omeda customer id for the customer being identified, when the caller
-  already holds one (IdentityX stores it as an external id after a member's first identification).
+  Candidate *encrypted* Omeda customer ids for the customer being identified — every id the caller
+  holds for this brand. IdentityX stores them as external ids after a member's first
+  identification, and appends over time, so a member can legitimately hold several.
 
-  When supplied it is resolved to the canonical, currently-active numeric customer id — following
-  Omeda merge chains — and sent as \`OmedaCustomerId\`, which bypasses Omeda's heuristic identity
-  resolution and guarantees the write lands on that customer. Passing this is what prevents
-  duplicate customers being minted from payloads that carry an email and little else.
+  Each is resolved to its canonical, currently-active numeric id (following Omeda merge chains).
+  When they **agree** on one customer — including when some are merged away or no longer resolve,
+  which is the common multi-id case — that id is sent as \`OmedaCustomerId\`, bypassing Omeda's
+  heuristic identity resolution and guaranteeing the write lands there. This is what prevents
+  duplicate customers being minted from payloads carrying an email and little else.
+
+  When two or more resolve to *simultaneously active* customers, the caller's ids point at genuine
+  duplicate records and no choice can be made safely — picking one would decide which record
+  receives every future write — so it falls back to email matching. Do not pre-select an id to
+  work around this: the stored order is not creation order, and the newest id is typically the
+  duplicate rather than the real record.
 
   **Any resolution failure falls back to today's email-only behaviour** and is reported, never
   raised: a stale, merged, malformed or unknown id must never break identification. \`email\` is
   still required and still updates the record's email list either way.
-
-  Callers should send this only when they hold exactly one unambiguous id for the brand.
   """
-  encryptedCustomerId: String
+  encryptedCustomerIds: [String!] = []
 }
 
 input RapidCustomerIdentificationDeploymentTypeInput {

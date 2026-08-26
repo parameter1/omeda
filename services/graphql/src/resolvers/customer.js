@@ -352,7 +352,7 @@ module.exports = {
     async rapidCustomerIdentification(_, { input }, { apiClient, repos }) {
       const {
         email,
-        encryptedCustomerId,
+        encryptedCustomerIds,
         phoneNumber,
         mobileNumber,
         faxNumber,
@@ -426,12 +426,12 @@ module.exports = {
         });
       }
 
-      // Resolve the caller's stored encrypted id (if any) to the canonical, currently-active
-      // numeric customer id. Never throws: `null` means "fall back to email matching", which is
-      // exactly the behaviour every caller had before this field existed.
+      // Resolve the caller's stored encrypted ids (if any) to the one canonical, currently-active
+      // numeric customer id they agree on. Never throws: `null` means "fall back to email
+      // matching", which is exactly the behaviour every caller had before this field existed.
       const resolvedCustomerId = await resolveOmedaCustomerId({
         apiClient,
-        encryptedCustomerId,
+        encryptedCustomerIds,
         noticeError,
       });
 

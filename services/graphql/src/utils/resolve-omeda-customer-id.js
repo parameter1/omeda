@@ -1,7 +1,7 @@
 /**
- * Resolves a stored *encrypted* Omeda customer id to the canonical, currently-active numeric
- * customer id, so `rapidCustomerIdentification` can send `OmedaCustomerId` on the Save Customer
- * and Order body and bypass Omeda's heuristic identity resolution entirely.
+ * Resolves the caller's stored *encrypted* Omeda customer ids to the one canonical, currently
+ * active numeric customer id — but **only when they agree**. `rapidCustomerIdentification` then
+ * sends it as SCAO's `OmedaCustomerId`, bypassing Omeda's heuristic identity resolution.
  *
  * ## Why this exists
  *
@@ -11,17 +11,32 @@
  * That is what Omeda writes when the payload carries an email and nothing else to match on. The
  * progressive-profile audience is identified-but-not-authenticated members created seconds earlier
  * from an email link, whose IdentityX record is email-only by construction, so their payload can
- * never carry contact fields. Their *encrypted customer id*, however, is already stored — written
+ * never carry contact fields. Their encrypted customer id, however, is already stored — written
  * within a second of member creation, well before the submit. Sending it is the only identifying
  * data those payloads can carry.
  *
- * ## Why it resolves rather than trusting the stored value
+ * ## Why it takes a list, and why convergence is the rule
  *
- * Omeda merges duplicate customers routinely, so a stored id may point at a record that has been
- * merged away. `lookupByEncryptedId` already follows those chains — it recurses on the
- * "customer id X is valid but not active ... please use Y" 404, transitively, and the client
- * force-throws that 404 shape regardless of `errorOnNotFound`. So one live lookup yields the
- * surviving record's numeric id.
+ * IdentityX external-id storage appends, so a member accumulates ids over time and can hold several
+ * for one brand. Those arrive in two flavours, and they need opposite treatment:
+ *
+ * - **Merged pairs.** Omeda merges duplicates routinely; the stale id then resolves *to the
+ *   survivor*, because `lookupByEncryptedId` recurses on the "customer id X is valid but not
+ *   active … please use Y" 404, transitively. Every id in such a set converges on one answer, so
+ *   there is nothing to choose and the id is safe to use. Measured: ~32% of ambiguous members.
+ * - **Live duplicate pairs.** Both records are simultaneously *active* — not a merge, but two real
+ *   customers, typically the good record plus a shell this very bug minted. Measured: 27 of 40
+ *   sampled. Here any choice is a guess, and the guess decides which record receives every future
+ *   write, so we refuse and let email matching continue exactly as it does today.
+ *
+ * Hence: resolve all candidates, ignore the ones that no longer resolve (they are dead), and use
+ * the result **only if the survivors agree on a single customer**.
+ *
+ * **Do not "just use the newest".** It is both unknowable and wrong. Unknowable because the
+ * stored array's order is not creation order — measured 13 matching vs 14 differing, and
+ * `$setUnion` does not guarantee ordering, so position carries no information. Wrong because when
+ * creation order *is* determined, the older record is the richer one 9 times to 2 among divergent
+ * pairs: the newest id is the empty shell just minted, the oldest is the member's real customer.
  *
  * **Deliberately uncached.** The api client this runs against is built with no cache, and it must
  * stay that way here: a cached pre-merge record would return exactly the stale id this resolution
@@ -29,44 +44,71 @@
  *
  * ## Failure is never fatal
  *
- * Every failure mode returns `null`, and a `null` return means the caller sends today's email-only
- * body. A stale, merged, malformed or unknown id must never break identification — the mutation
- * sits on the blocking path of authentication on every fleet site. The three modes:
- *
- * - **Joi rejects the value** before any HTTP call (encrypted ids are exactly 15 characters), which
- *   is how a truncated or garbage stored id surfaces.
- * - **A hard 404 under `errorOnNotFound: false`** resolves successfully with an empty, success-
- *   shaped response, so the absence of `data.Id` is the signal — the same guard the
- *   `customerByEncryptedId` query already uses.
- * - **Any other API error** — timeout, 5xx, auth.
+ * Every failure mode returns `null`, and `null` means the caller sends today's email-only body. A
+ * stale, merged, malformed or unknown id must never break identification — this mutation sits on
+ * the blocking path of authentication on every fleet site. The modes: Joi rejects a malformed
+ * value before any HTTP call (encrypted ids are exactly 15 characters); a hard 404 under
+ * `errorOnNotFound: false` resolves *successfully* with an empty response, so an absent `data.Id`
+ * is the signal, matching the guard `customerByEncryptedId` already uses; and any other API error.
  *
  * @param {object} params
  * @param {object} params.apiClient The Omeda API client.
- * @param {string} [params.encryptedCustomerId] The stored encrypted customer id, if any.
+ * @param {string[]} [params.encryptedCustomerIds] Candidate encrypted ids for this customer.
  * @param {function} params.noticeError Error reporter (New Relic's `noticeError`).
- * @returns {Promise<number|null>} The canonical numeric customer id, or `null` to fall back.
+ * @returns {Promise<number|null>} The agreed numeric customer id, or `null` to fall back to email.
  */
-module.exports = async ({ apiClient, encryptedCustomerId, noticeError } = {}) => {
-  // Not an error: the vast majority of callers simply have no stored id yet.
-  if (!encryptedCustomerId) return null;
 
-  try {
-    const response = await apiClient.resource('customer').lookupByEncryptedId({
-      encryptedId: encryptedCustomerId,
-      // Follow merge chains to the surviving record. This is the whole point.
-      reQueryOnInactive: true,
-      // Do not throw on a genuine miss -- an unknown id must fall back, not fail the mutation.
-      errorOnNotFound: false,
-    });
+/**
+ * Latency guard. Each candidate is one live Omeda GET, and this runs on the blocking path of
+ * authentication. Beyond this the set is refused outright rather than sampled: resolving an
+ * arbitrary subset would reintroduce exactly the guess this function exists to avoid. Members
+ * holding more than four ids for one brand are vanishingly rare (one on abmedia, two on allured).
+ */
+const MAX_CANDIDATES = 4;
 
-    const id = response && response.data ? response.data.Id : null;
-    if (!id) {
-      noticeError(new Error(`Unable to resolve Omeda customer from encrypted id ${encryptedCustomerId}: not found. Falling back to email matching.`));
-      return null;
-    }
-    return id;
-  } catch (e) {
-    noticeError(new Error(`Unable to resolve Omeda customer from encrypted id ${encryptedCustomerId}: ${e.message}. Falling back to email matching.`));
+module.exports = async ({ apiClient, encryptedCustomerIds, noticeError } = {}) => {
+  const candidates = [...new Set((encryptedCustomerIds || []).filter((id) => id))];
+  // Not an error: most callers have no stored id yet.
+  if (!candidates.length) return null;
+
+  if (candidates.length > MAX_CANDIDATES) {
+    noticeError(new Error(`Refusing to resolve an Omeda customer from ${candidates.length} candidate encrypted ids (max ${MAX_CANDIDATES}). Falling back to email matching.`));
     return null;
   }
+
+  const resource = apiClient.resource('customer');
+  const settled = await Promise.all(candidates.map(async (encryptedId) => {
+    try {
+      const response = await resource.lookupByEncryptedId({
+        encryptedId,
+        // Follow merge chains to the surviving record. This is what makes a stale id usable.
+        reQueryOnInactive: true,
+        // A genuine miss must resolve empty, not throw -- an unknown id is dead, not fatal.
+        errorOnNotFound: false,
+      });
+      return (response && response.data ? response.data.Id : null) || null;
+    } catch (e) {
+      noticeError(new Error(`Unable to resolve Omeda customer from encrypted id ${encryptedId}: ${e.message}.`));
+      return null;
+    }
+  }));
+
+  // Dead ids are ignored, not disqualifying: a merged-away or unknown id alongside a live one
+  // leaves exactly one real answer.
+  const resolved = [...new Set(settled.filter((id) => id))];
+
+  if (!resolved.length) {
+    noticeError(new Error(`Unable to resolve an Omeda customer from ${candidates.length} encrypted id(s): none are active. Falling back to email matching.`));
+    return null;
+  }
+
+  if (resolved.length > 1) {
+    // Two or more simultaneously-active customers for one member. Choosing would decide which
+    // record receives every future write, so refuse -- email matching continues as it does today.
+    // These are the pairs that need merging in Omeda; this is the signal that says which.
+    noticeError(new Error(`Omeda customer ids ${resolved.join(', ')} are all active for the same member (encrypted ids ${candidates.join(', ')}); cannot choose a write target. Falling back to email matching.`));
+    return null;
+  }
+
+  return resolved[0];
 };
