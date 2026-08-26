@@ -164,6 +164,8 @@ type RapidCustomerIdentification {
   customer: Customer
   orderId: Int @apiValue
   transactionId: Int! @apiValue
+  "How Omeda located the customer: \`customerId\` when a resolved \`OmedaCustomerId\` was sent (identity resolution bypassed), \`email\` when it fell back to email matching. Resolver-provided, not an Omeda API value."
+  matchedBy: String
 }
 
 input ChangedCustomersQueryInput {
@@ -263,6 +265,22 @@ input RapidCustomerIdentificationMutationInput {
   promoCode: String
   "An optional input ID to use when identifying."
   inputId: Int
+  """
+  An optional *encrypted* Omeda customer id for the customer being identified, when the caller
+  already holds one (IdentityX stores it as an external id after a member's first identification).
+
+  When supplied it is resolved to the canonical, currently-active numeric customer id — following
+  Omeda merge chains — and sent as \`OmedaCustomerId\`, which bypasses Omeda's heuristic identity
+  resolution and guarantees the write lands on that customer. Passing this is what prevents
+  duplicate customers being minted from payloads that carry an email and little else.
+
+  **Any resolution failure falls back to today's email-only behaviour** and is reported, never
+  raised: a stale, merged, malformed or unknown id must never break identification. \`email\` is
+  still required and still updates the record's email list either way.
+
+  Callers should send this only when they hold exactly one unambiguous id for the brand.
+  """
+  encryptedCustomerId: String
 }
 
 input RapidCustomerIdentificationDeploymentTypeInput {

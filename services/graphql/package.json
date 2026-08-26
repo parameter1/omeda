@@ -15,7 +15,7 @@
   "scripts": {
     "dev": "PORT=8990 gulp",
     "lint": "eslint --ext .js --max-warnings 5 ./",
-    "test": "yarn lint"
+    "test": "yarn lint && mocha --reporter spec"
   },
   "dependencies": {
     "@parameter1/graphql-mongodb-pagination": "^2.2.15",
@@ -39,6 +39,8 @@
     "newrelic": "^8.7.1"
   },
   "devDependencies": {
-    "@parameter1/gulp": "^1.2.0"
+    "@parameter1/gulp": "^1.2.0",
+    "chai": "^4.3.7",
+    "mocha": "^6.2.3"
   }
 }
