@@ -2,6 +2,7 @@ const { UserInputError } = require('apollo-server-express');
 const { get, getAsArray } = require('@parameter1/utils');
 const newrelic = require('../newrelic');
 const dayjs = require('../dayjs');
+const resolveOmedaCustomerId = require('../utils/resolve-omeda-customer-id');
 
 const noticeError = newrelic.noticeError.bind(newrelic);
 
@@ -351,6 +352,7 @@ module.exports = {
     async rapidCustomerIdentification(_, { input }, { apiClient, repos }) {
       const {
         email,
+        encryptedCustomerIds,
         phoneNumber,
         mobileNumber,
         faxNumber,
@@ -424,6 +426,15 @@ module.exports = {
         });
       }
 
+      // Resolve the caller's stored encrypted ids (if any) to the one canonical, currently-active
+      // numeric customer id they agree on. Never throws: `null` means "fall back to email
+      // matching", which is exactly the behaviour every caller had before this field existed.
+      const resolvedCustomerId = await resolveOmedaCustomerId({
+        apiClient,
+        encryptedCustomerIds,
+        noticeError,
+      });
+
       const hasAddress = companyName || regionCode || countryCode || postalCode
         || streetAddress || city || extraAddress;
 
@@ -433,6 +444,11 @@ module.exports = {
       if (faxNumber) phones.push({ Number: faxNumber, PhoneContactType: 240 });
       const body = {
         RunProcessor: 1,
+        // Providing this guarantees Omeda's identity resolution processing is bypassed, so the
+        // write lands on this customer rather than on whichever record the heuristics pick (or on
+        // a fresh duplicate). `Emails` below stays unconditional either way -- email is required
+        // input and still updates the record's email list; it just no longer drives matching.
+        ...(resolvedCustomerId && { OmedaCustomerId: resolvedCustomerId }),
         Products: [...productMap].map(([OmedaProductId, Receive]) => {
           const subscription = subscriptions.find((obj) => obj.id === OmedaProductId);
           return ({
@@ -495,11 +511,32 @@ module.exports = {
         }),
         ...(promoCode && { PromoCode: promoCode }),
       };
+      // Tracks whether the id actually survived to the write. The retry below strips it, and
+      // `matchedBy` must report what Omeda really matched on, not what we intended.
+      let matchedBy = resolvedCustomerId ? 'customerId' : 'email';
       const [response] = await Promise.all([
-        apiClient.resource('customer').storeCustomerAndOrder({
-          body,
-          inputId: input.inputId,
-        }),
+        (async () => {
+          const customerResource = apiClient.resource('customer');
+          try {
+            return await customerResource.storeCustomerAndOrder({ body, inputId: input.inputId });
+          } catch (e) {
+            // Guards the lookup-to-post race: the id resolved cleanly a moment ago, but a merge or
+            // deactivation landed before the post. Omeda reports that as a structured error rather
+            // than a silent mismatch, so retry once *without* the id and let email matching handle
+            // it -- the same outcome the fallback path gives. Any other error is a real failure
+            // and is re-thrown.
+            const isIdError = resolvedCustomerId
+              && /valid but not active|is not a valid customer|pending deactivation/i.test(e.message);
+            if (!isIdError) throw e;
+            noticeError(new Error(`Omeda rejected OmedaCustomerId ${resolvedCustomerId} on store-customer-and-order: ${e.message}. Retrying with email matching.`));
+            const { OmedaCustomerId, ...withoutId } = body;
+            matchedBy = 'email';
+            return customerResource.storeCustomerAndOrder({
+              body: withoutId,
+              inputId: input.inputId,
+            });
+          }
+        })(),
         (async () => {
           if (!deploymentTypeOptInMap.size) return null;
           const optInIds = [];
@@ -527,7 +564,9 @@ module.exports = {
           ]);
         })(),
       ]);
-      return response.data;
+      // `matchedBy` is resolver-provided, not an Omeda API value. Spreading preserves `CustomerId`,
+      // which the `RapidCustomerIdentification.customer` field resolver destructures.
+      return { ...response.data, matchedBy };
     },
   },
 
