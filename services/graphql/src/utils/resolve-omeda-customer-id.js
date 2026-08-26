@@ -29,8 +29,25 @@
  *   sampled. Here any choice is a guess, and the guess decides which record receives every future
  *   write, so we refuse and let email matching continue exactly as it does today.
  *
- * Hence: resolve all candidates, ignore the ones that no longer resolve (they are dead), and use
- * the result **only if the survivors agree on a single customer**.
+ * Hence: resolve all candidates, ignore the ones that are *conclusively* dead, and use the result
+ * **only if the survivors agree on a single customer**.
+ *
+ * ## "Conclusively dead" is narrower than "did not resolve"
+ *
+ * A candidate is safe to ignore only when it is known to name no active customer. Two do:
+ *
+ * - **Malformed** — not 15 characters, so it can never be a customer id. Filtered before any call
+ *   (this is also what Joi would reject inside `lookupByEncryptedId`).
+ * - **Not found** — under `errorOnNotFound: false` a genuine 404 resolves *successfully* with an
+ *   empty body, so an absent `data.Id` is a definitive answer, not a failure.
+ *
+ * An **error** is neither. Because a real 404 does not throw here, a throw means a timeout, a 5xx
+ * or a transport failure — i.e. *we do not know what that id points at*. It could be a second
+ * active customer. Ignoring it and using a sibling's answer would be precisely the guess this
+ * function exists to avoid, so an unresolved-by-error candidate aborts the whole resolution and
+ * falls back to email matching. The cost of being wrong here is asymmetric: falling back loses a
+ * little determinism for one identification, while guessing writes the member onto a record that
+ * may not be theirs, permanently.
  *
  * **Do not "just use the newest".** It is both unknowable and wrong. Unknowable because the
  * stored array's order is not creation order — measured 13 matching vs 14 differing, and
@@ -66,9 +83,24 @@
  */
 const MAX_CANDIDATES = 4;
 
+/** Omeda encrypted customer ids are exactly this long; see the api client's attribute schema. */
+const ENCRYPTED_ID_LENGTH = 15;
+
 module.exports = async ({ apiClient, encryptedCustomerIds, noticeError } = {}) => {
-  const candidates = [...new Set((encryptedCustomerIds || []).filter((id) => id))];
+  const supplied = [...new Set((encryptedCustomerIds || [])
+    .filter((id) => id)
+    .map((id) => `${id}`.trim()))];
   // Not an error: most callers have no stored id yet.
+  if (!supplied.length) return null;
+
+  // Malformed values can never name a customer, so they carry no claim about a write target and
+  // are dropped rather than allowed to veto a sibling. Mirrors the api client's own
+  // `encryptedCustomerId` rule (trimmed, exactly 15 chars) -- doing it here keeps a validation
+  // throw from being indistinguishable from a transport failure below.
+  const candidates = supplied.filter((id) => id.length === ENCRYPTED_ID_LENGTH);
+  if (candidates.length !== supplied.length) {
+    noticeError(new Error(`Ignoring ${supplied.length - candidates.length} malformed encrypted customer id(s): ${supplied.filter((id) => id.length !== ENCRYPTED_ID_LENGTH).join(', ')}.`));
+  }
   if (!candidates.length) return null;
 
   if (candidates.length > MAX_CANDIDATES) {
@@ -83,19 +115,27 @@ module.exports = async ({ apiClient, encryptedCustomerIds, noticeError } = {}) =
         encryptedId,
         // Follow merge chains to the surviving record. This is what makes a stale id usable.
         reQueryOnInactive: true,
-        // A genuine miss must resolve empty, not throw -- an unknown id is dead, not fatal.
+        // A genuine miss must resolve empty, not throw -- "not found" is an answer, not a failure.
         errorOnNotFound: false,
       });
-      return (response && response.data ? response.data.Id : null) || null;
+      const id = (response && response.data ? response.data.Id : null) || null;
+      return id ? { state: 'active', id } : { state: 'dead' };
     } catch (e) {
       noticeError(new Error(`Unable to resolve Omeda customer from encrypted id ${encryptedId}: ${e.message}.`));
-      return null;
+      return { state: 'unknown' };
     }
   }));
 
-  // Dead ids are ignored, not disqualifying: a merged-away or unknown id alongside a live one
-  // leaves exactly one real answer.
-  const resolved = [...new Set(settled.filter((id) => id))];
+  // We do not know what an errored candidate points at, and it could be a second active customer.
+  // Refuse rather than let a sibling's answer stand in for it.
+  if (settled.some(({ state }) => state === 'unknown')) {
+    noticeError(new Error(`Could not resolve every candidate encrypted id (${candidates.join(', ')}); cannot rule out a second active customer. Falling back to email matching.`));
+    return null;
+  }
+
+  // Conclusively-dead ids are ignored, not disqualifying: a merged-away or unknown id alongside a
+  // live one leaves exactly one real answer.
+  const resolved = [...new Set(settled.filter((r) => r.state === 'active').map((r) => r.id))];
 
   if (!resolved.length) {
     noticeError(new Error(`Unable to resolve an Omeda customer from ${candidates.length} encrypted id(s): none are active. Falling back to email matching.`));

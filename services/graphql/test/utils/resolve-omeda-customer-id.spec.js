@@ -107,13 +107,30 @@ describe('utils/resolve-omeda-customer-id', () => {
     expect(errors).to.have.lengthOf(0);
   });
 
-  it('ignores a candidate that throws, and uses the one live answer', async () => {
-    // Encrypted ids are exactly 15 characters, so a malformed one throws at Joi before any HTTP
-    // call. It is reported, but it must not veto a sibling that resolved cleanly.
+  it('uses the live answer when a THIRD candidate is dead and two others converge', async () => {
+    // Three ids, two resolving to the same active customer and one no longer resolving at all.
+    // The dead id makes no claim about a write target, so the agreeing pair wins.
     const { apiClient } = clientWith({
-      'too-short': new Error('"encryptedId" length must be 15 characters long'),
       [LIVE]: 1105483508,
+      [MERGED]: 1105483508,
+      [DEAD]: null,
     });
+    const { errors, noticeError } = noticer();
+
+    const id = await resolveOmedaCustomerId({
+      apiClient,
+      encryptedCustomerIds: [LIVE, MERGED, DEAD],
+      noticeError,
+    });
+
+    expect(id).to.equal(1105483508);
+    expect(errors).to.have.lengthOf(0);
+  });
+
+  it('drops a malformed candidate without letting it veto a live sibling', async () => {
+    // Not 15 characters, so it can never name a customer. Filtered before any call is made,
+    // which is also what keeps it distinguishable from a transport failure.
+    const { apiClient, calls } = clientWith({ [LIVE]: 1105483508 });
     const { errors, noticeError } = noticer();
 
     const id = await resolveOmedaCustomerId({
@@ -123,8 +140,44 @@ describe('utils/resolve-omeda-customer-id', () => {
     });
 
     expect(id).to.equal(1105483508);
+    expect(calls.map((c) => c.encryptedId)).to.deep.equal([LIVE]);
     expect(errors).to.have.lengthOf(1);
-    expect(errors[0].message).to.contain('length must be 15');
+    expect(errors[0].message).to.contain('malformed');
+  });
+
+  it('REFUSES when a candidate errors, even if another resolved cleanly', async () => {
+    // A real 404 resolves empty rather than throwing, so a throw means timeout/5xx/transport --
+    // we do not know what that id points at, and it could be a second active customer. Using the
+    // sibling's answer would be the exact guess this function exists to avoid.
+    const { apiClient } = clientWith({
+      [LIVE]: 1105483508,
+      [OTHER]: new Error('socket hang up'),
+    });
+    const { errors, noticeError } = noticer();
+
+    const id = await resolveOmedaCustomerId({
+      apiClient,
+      encryptedCustomerIds: [LIVE, OTHER],
+      noticeError,
+    });
+
+    expect(id).to.equal(null);
+    expect(errors.map((e) => e.message).join(' ')).to.contain('socket hang up');
+    expect(errors.map((e) => e.message).join(' ')).to.contain('cannot rule out a second active customer');
+  });
+
+  it('falls back when the only candidate errors', async () => {
+    const { apiClient } = clientWith({ [LIVE]: new Error('socket hang up') });
+    const { errors, noticeError } = noticer();
+
+    const id = await resolveOmedaCustomerId({
+      apiClient,
+      encryptedCustomerIds: [LIVE],
+      noticeError,
+    });
+
+    expect(id).to.equal(null);
+    expect(errors).to.have.lengthOf(2);
   });
 
   it('REFUSES when candidates resolve to different ACTIVE customers', async () => {
@@ -185,7 +238,7 @@ describe('utils/resolve-omeda-customer-id', () => {
 
     const id = await resolveOmedaCustomerId({
       apiClient,
-      encryptedCustomerIds: ['a', 'b', 'c', 'd', 'e'],
+      encryptedCustomerIds: [LIVE, MERGED, DEAD, OTHER, '1234A5678901B2C'],
       noticeError,
     });
 
