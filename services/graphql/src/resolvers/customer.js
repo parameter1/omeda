@@ -427,9 +427,9 @@ module.exports = {
       }
 
       // Resolve the caller's stored encrypted ids (if any) to the one canonical, currently-active
-      // numeric customer id they agree on. Never throws: `null` means "fall back to email
+      // numeric customer id they agree on. Never throws: a null id means "fall back to email
       // matching", which is exactly the behaviour every caller had before this field existed.
-      const resolvedCustomerId = await resolveOmedaCustomerId({
+      const { customerId: resolvedCustomerId, outcome } = await resolveOmedaCustomerId({
         apiClient,
         encryptedCustomerIds,
         noticeError,
@@ -564,6 +564,29 @@ module.exports = {
           ]);
         })(),
       ]);
+      /**
+       * Adoption telemetry. `matchedBy` is returned to the caller, but no client does anything with
+       * it -- so without this the only observable is `noticeError`, which counts *failures* with no
+       * denominator. Recording it here covers every caller and every hook path from one place.
+       *
+       * Three attributes, because one cannot answer the question. `omedaMatchedBy` alone conflates
+       * "the member had no stored id" with "the member's ids contradicted each other" -- the first
+       * is client rollout or a genuinely new member, the second is a duplicate pair needing an
+       * Omeda merge. `omedaIdResolution` separates them, and `omedaCandidateIdCount` gives the
+       * denominator for adoption.
+       *
+       * A `resolved` outcome alongside `matchedBy: 'email'` is meaningful on its own: it is the
+       * lookup-to-post race, where the id resolved cleanly and SCAO then rejected it.
+       *
+       * The agent no-ops when disabled or outside a transaction, so this is inert rather than
+       * fatal -- which matters on the blocking path of authentication.
+       */
+      newrelic.addCustomAttributes({
+        omedaMatchedBy: matchedBy,
+        omedaIdResolution: outcome,
+        omedaCandidateIdCount: getAsArray(input, 'encryptedCustomerIds').length,
+      });
+
       // `matchedBy` is resolver-provided, not an Omeda API value. Spreading preserves `CustomerId`,
       // which the `RapidCustomerIdentification.customer` field resolver destructures.
       return { ...response.data, matchedBy };

@@ -2,6 +2,8 @@ const { describe, it } = require('mocha');
 const { expect } = require('chai');
 const resolveOmedaCustomerId = require('../../src/utils/resolve-omeda-customer-id');
 
+const { OUTCOMES } = resolveOmedaCustomerId;
+
 const LIVE = '9130C2719701F5S';
 const MERGED = '6466A3060334H6A';
 const DEAD = '0240G4865912F6U';
@@ -41,13 +43,15 @@ describe('utils/resolve-omeda-customer-id', () => {
     const { apiClient, calls } = clientWith({ [LIVE]: 1105483508 });
     const { errors, noticeError } = noticer();
 
-    const id = await resolveOmedaCustomerId({
+    const { customerId, outcome } = await resolveOmedaCustomerId({
       apiClient,
       encryptedCustomerIds: [LIVE],
       noticeError,
     });
 
-    expect(id).to.equal(1105483508);
+    expect(customerId).to.equal(1105483508);
+
+    expect(outcome).to.equal(OUTCOMES.RESOLVED);
     expect(errors).to.have.lengthOf(0);
     // Merge-following must be requested, and a miss must not throw -- both are load-bearing.
     expect(calls).to.deep.equal([{
@@ -63,13 +67,15 @@ describe('utils/resolve-omeda-customer-id', () => {
     const { apiClient } = clientWith({ [MERGED]: 1100158437 });
     const { errors, noticeError } = noticer();
 
-    const id = await resolveOmedaCustomerId({
+    const { customerId, outcome } = await resolveOmedaCustomerId({
       apiClient,
       encryptedCustomerIds: [MERGED],
       noticeError,
     });
 
-    expect(id).to.equal(1100158437);
+    expect(customerId).to.equal(1100158437);
+
+    expect(outcome).to.equal(OUTCOMES.RESOLVED);
     expect(errors).to.have.lengthOf(0);
   });
 
@@ -81,13 +87,15 @@ describe('utils/resolve-omeda-customer-id', () => {
     const { apiClient, calls } = clientWith({ [MERGED]: 1100158437, [LIVE]: 1100158437 });
     const { errors, noticeError } = noticer();
 
-    const id = await resolveOmedaCustomerId({
+    const { customerId, outcome } = await resolveOmedaCustomerId({
       apiClient,
       encryptedCustomerIds: [MERGED, LIVE],
       noticeError,
     });
 
-    expect(id).to.equal(1100158437);
+    expect(customerId).to.equal(1100158437);
+
+    expect(outcome).to.equal(OUTCOMES.RESOLVED);
     expect(calls).to.have.lengthOf(2);
     expect(errors).to.have.lengthOf(0);
   });
@@ -97,13 +105,15 @@ describe('utils/resolve-omeda-customer-id', () => {
     const { apiClient } = clientWith({ [DEAD]: null, [LIVE]: 1105483508 });
     const { errors, noticeError } = noticer();
 
-    const id = await resolveOmedaCustomerId({
+    const { customerId, outcome } = await resolveOmedaCustomerId({
       apiClient,
       encryptedCustomerIds: [DEAD, LIVE],
       noticeError,
     });
 
-    expect(id).to.equal(1105483508);
+    expect(customerId).to.equal(1105483508);
+
+    expect(outcome).to.equal(OUTCOMES.RESOLVED);
     expect(errors).to.have.lengthOf(0);
   });
 
@@ -117,13 +127,15 @@ describe('utils/resolve-omeda-customer-id', () => {
     });
     const { errors, noticeError } = noticer();
 
-    const id = await resolveOmedaCustomerId({
+    const { customerId, outcome } = await resolveOmedaCustomerId({
       apiClient,
       encryptedCustomerIds: [LIVE, MERGED, DEAD],
       noticeError,
     });
 
-    expect(id).to.equal(1105483508);
+    expect(customerId).to.equal(1105483508);
+
+    expect(outcome).to.equal(OUTCOMES.RESOLVED);
     expect(errors).to.have.lengthOf(0);
   });
 
@@ -133,13 +145,15 @@ describe('utils/resolve-omeda-customer-id', () => {
     const { apiClient, calls } = clientWith({ [LIVE]: 1105483508 });
     const { errors, noticeError } = noticer();
 
-    const id = await resolveOmedaCustomerId({
+    const { customerId, outcome } = await resolveOmedaCustomerId({
       apiClient,
       encryptedCustomerIds: ['too-short', LIVE],
       noticeError,
     });
 
-    expect(id).to.equal(1105483508);
+    expect(customerId).to.equal(1105483508);
+
+    expect(outcome).to.equal(OUTCOMES.RESOLVED);
     expect(calls.map((c) => c.encryptedId)).to.deep.equal([LIVE]);
     expect(errors).to.have.lengthOf(1);
     expect(errors[0].message).to.contain('malformed');
@@ -155,13 +169,15 @@ describe('utils/resolve-omeda-customer-id', () => {
     });
     const { errors, noticeError } = noticer();
 
-    const id = await resolveOmedaCustomerId({
+    const { customerId, outcome } = await resolveOmedaCustomerId({
       apiClient,
       encryptedCustomerIds: [LIVE, OTHER],
       noticeError,
     });
 
-    expect(id).to.equal(null);
+    expect(customerId).to.equal(null);
+
+    expect(outcome).to.equal(OUTCOMES.UNRESOLVABLE);
     expect(errors.map((e) => e.message).join(' ')).to.contain('socket hang up');
     expect(errors.map((e) => e.message).join(' ')).to.contain('cannot rule out a second active customer');
   });
@@ -170,13 +186,15 @@ describe('utils/resolve-omeda-customer-id', () => {
     const { apiClient } = clientWith({ [LIVE]: new Error('socket hang up') });
     const { errors, noticeError } = noticer();
 
-    const id = await resolveOmedaCustomerId({
+    const { customerId, outcome } = await resolveOmedaCustomerId({
       apiClient,
       encryptedCustomerIds: [LIVE],
       noticeError,
     });
 
-    expect(id).to.equal(null);
+    expect(customerId).to.equal(null);
+
+    expect(outcome).to.equal(OUTCOMES.UNRESOLVABLE);
     expect(errors).to.have.lengthOf(2);
   });
 
@@ -187,13 +205,15 @@ describe('utils/resolve-omeda-customer-id', () => {
     const { apiClient } = clientWith({ [LIVE]: 1105483508, [OTHER]: 1108476082 });
     const { errors, noticeError } = noticer();
 
-    const id = await resolveOmedaCustomerId({
+    const { customerId, outcome } = await resolveOmedaCustomerId({
       apiClient,
       encryptedCustomerIds: [LIVE, OTHER],
       noticeError,
     });
 
-    expect(id).to.equal(null);
+    expect(customerId).to.equal(null);
+
+    expect(outcome).to.equal(OUTCOMES.DIVERGED);
     expect(errors).to.have.lengthOf(1);
     expect(errors[0].message).to.contain('are all active for the same member');
     // The report must name the customers, so the pairs needing an Omeda merge are identifiable.
@@ -205,13 +225,15 @@ describe('utils/resolve-omeda-customer-id', () => {
     const { apiClient } = clientWith({ [DEAD]: null, [OTHER]: null });
     const { errors, noticeError } = noticer();
 
-    const id = await resolveOmedaCustomerId({
+    const { customerId, outcome } = await resolveOmedaCustomerId({
       apiClient,
       encryptedCustomerIds: [DEAD, OTHER],
       noticeError,
     });
 
-    expect(id).to.equal(null);
+    expect(customerId).to.equal(null);
+
+    expect(outcome).to.equal(OUTCOMES.NONE_ACTIVE);
     expect(errors).to.have.lengthOf(1);
     expect(errors[0].message).to.contain('none are active');
   });
@@ -220,13 +242,15 @@ describe('utils/resolve-omeda-customer-id', () => {
     const { apiClient, calls } = clientWith({ [LIVE]: 1105483508 });
     const { errors, noticeError } = noticer();
 
-    const id = await resolveOmedaCustomerId({
+    const { customerId, outcome } = await resolveOmedaCustomerId({
       apiClient,
       encryptedCustomerIds: [LIVE, LIVE, LIVE],
       noticeError,
     });
 
-    expect(id).to.equal(1105483508);
+    expect(customerId).to.equal(1105483508);
+
+    expect(outcome).to.equal(OUTCOMES.RESOLVED);
     expect(calls).to.have.lengthOf(1);
     expect(errors).to.have.lengthOf(0);
   });
@@ -236,27 +260,48 @@ describe('utils/resolve-omeda-customer-id', () => {
     const { apiClient, calls } = clientWith({});
     const { errors, noticeError } = noticer();
 
-    const id = await resolveOmedaCustomerId({
+    const { customerId, outcome } = await resolveOmedaCustomerId({
       apiClient,
       encryptedCustomerIds: [LIVE, MERGED, DEAD, OTHER, '1234A5678901B2C'],
       noticeError,
     });
 
-    expect(id).to.equal(null);
+    expect(customerId).to.equal(null);
+
+    expect(outcome).to.equal(OUTCOMES.TOO_MANY);
     expect(calls).to.have.lengthOf(0);
     expect(errors).to.have.lengthOf(1);
     expect(errors[0].message).to.contain('max 4');
+  });
+
+  it('reports malformed-only when every candidate is unusable', async () => {
+    // Distinct from `none-supplied`: the client DID store something, it just cannot name a
+    // customer. Faceting these apart is the point of returning an outcome at all.
+    const { apiClient, calls } = clientWith({});
+    const { errors, noticeError } = noticer();
+
+    const { customerId, outcome } = await resolveOmedaCustomerId({
+      apiClient,
+      encryptedCustomerIds: ['too-short', 'also-bad'],
+      noticeError,
+    });
+
+    expect(customerId).to.equal(null);
+    expect(outcome).to.equal(OUTCOMES.MALFORMED_ONLY);
+    expect(calls).to.have.lengthOf(0);
+    expect(errors).to.have.lengthOf(1);
   });
 
   it('returns null without an API call or an error report when no ids are supplied', async () => {
     const { apiClient, calls } = clientWith({});
     const { errors, noticeError } = noticer();
 
-    const ids = await Promise.all([undefined, null, [], ['', null]].map((encryptedCustomerIds) => (
+    const results = await Promise.all([undefined, null, [], ['', null]].map((encryptedCustomerIds) => (
       resolveOmedaCustomerId({ apiClient, encryptedCustomerIds, noticeError })
     )));
 
-    expect(ids).to.deep.equal([null, null, null, null]);
+    expect(results.map((r) => r.customerId)).to.deep.equal([null, null, null, null]);
+    expect(results.map((r) => r.outcome)).to.deep.equal(Array(4).fill(OUTCOMES.NONE_SUPPLIED));
     expect(calls).to.have.lengthOf(0);
     // Holding no stored id is the common case, not a failure -- it must not create error noise.
     expect(errors).to.have.lengthOf(0);

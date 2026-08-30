@@ -72,7 +72,12 @@
  * @param {object} params.apiClient The Omeda API client.
  * @param {string[]} [params.encryptedCustomerIds] Candidate encrypted ids for this customer.
  * @param {function} params.noticeError Error reporter (New Relic's `noticeError`).
- * @returns {Promise<number|null>} The agreed numeric customer id, or `null` to fall back to email.
+ * @returns {Promise<{ customerId: ?number, outcome: string }>} The agreed numeric customer id (or
+ *   `null` to fall back to email), plus *why* — see `OUTCOMES`. The reason is returned rather than
+ *   only reported, because "no id was stored" and "ids were stored but contradicted each other" are
+ *   the same `null` here and completely different problems: the first is client rollout or a
+ *   brand-new member, the second is a duplicate pair that needs merging in Omeda. Counting
+ *   `noticeError` message strings to tell them apart would be fragile.
  */
 
 /**
@@ -86,12 +91,27 @@ const MAX_CANDIDATES = 4;
 /** Omeda encrypted customer ids are exactly this long; see the api client's attribute schema. */
 const ENCRYPTED_ID_LENGTH = 15;
 
+/**
+ * Why a resolution ended where it did. Faceting these separates the three populations that all
+ * look like "matched by email" from the outside: the client has nothing stored yet, the member is
+ * genuinely new, or the member's stored ids point at contradictory records.
+ */
+const OUTCOMES = {
+  NONE_SUPPLIED: 'none-supplied',
+  MALFORMED_ONLY: 'malformed-only',
+  TOO_MANY: 'too-many',
+  UNRESOLVABLE: 'unresolvable',
+  NONE_ACTIVE: 'none-active',
+  DIVERGED: 'diverged',
+  RESOLVED: 'resolved',
+};
+
 module.exports = async ({ apiClient, encryptedCustomerIds, noticeError } = {}) => {
   const supplied = [...new Set((encryptedCustomerIds || [])
     .filter((id) => id)
     .map((id) => `${id}`.trim()))];
   // Not an error: most callers have no stored id yet.
-  if (!supplied.length) return null;
+  if (!supplied.length) return { customerId: null, outcome: OUTCOMES.NONE_SUPPLIED };
 
   // Malformed values can never name a customer, so they carry no claim about a write target and
   // are dropped rather than allowed to veto a sibling. Mirrors the api client's own
@@ -101,11 +121,11 @@ module.exports = async ({ apiClient, encryptedCustomerIds, noticeError } = {}) =
   if (candidates.length !== supplied.length) {
     noticeError(new Error(`Ignoring ${supplied.length - candidates.length} malformed encrypted customer id(s): ${supplied.filter((id) => id.length !== ENCRYPTED_ID_LENGTH).join(', ')}.`));
   }
-  if (!candidates.length) return null;
+  if (!candidates.length) return { customerId: null, outcome: OUTCOMES.MALFORMED_ONLY };
 
   if (candidates.length > MAX_CANDIDATES) {
     noticeError(new Error(`Refusing to resolve an Omeda customer from ${candidates.length} candidate encrypted ids (max ${MAX_CANDIDATES}). Falling back to email matching.`));
-    return null;
+    return { customerId: null, outcome: OUTCOMES.TOO_MANY };
   }
 
   const resource = apiClient.resource('customer');
@@ -130,7 +150,7 @@ module.exports = async ({ apiClient, encryptedCustomerIds, noticeError } = {}) =
   // Refuse rather than let a sibling's answer stand in for it.
   if (settled.some(({ state }) => state === 'unknown')) {
     noticeError(new Error(`Could not resolve every candidate encrypted id (${candidates.join(', ')}); cannot rule out a second active customer. Falling back to email matching.`));
-    return null;
+    return { customerId: null, outcome: OUTCOMES.UNRESOLVABLE };
   }
 
   // Conclusively-dead ids are ignored, not disqualifying: a merged-away or unknown id alongside a
@@ -139,7 +159,7 @@ module.exports = async ({ apiClient, encryptedCustomerIds, noticeError } = {}) =
 
   if (!resolved.length) {
     noticeError(new Error(`Unable to resolve an Omeda customer from ${candidates.length} encrypted id(s): none are active. Falling back to email matching.`));
-    return null;
+    return { customerId: null, outcome: OUTCOMES.NONE_ACTIVE };
   }
 
   if (resolved.length > 1) {
@@ -147,8 +167,11 @@ module.exports = async ({ apiClient, encryptedCustomerIds, noticeError } = {}) =
     // record receives every future write, so refuse -- email matching continues as it does today.
     // These are the pairs that need merging in Omeda; this is the signal that says which.
     noticeError(new Error(`Omeda customer ids ${resolved.join(', ')} are all active for the same member (encrypted ids ${candidates.join(', ')}); cannot choose a write target. Falling back to email matching.`));
-    return null;
+    return { customerId: null, outcome: OUTCOMES.DIVERGED };
   }
 
-  return resolved[0];
+  return { customerId: resolved[0], outcome: OUTCOMES.RESOLVED };
 };
+
+// Attached after the function assignment above, which would otherwise clobber it.
+module.exports.OUTCOMES = OUTCOMES;
