@@ -52,6 +52,22 @@ class OmedaGraphQLPlugin {
 
     context.brand = brand;
 
+    /**
+     * Tag the transaction with the brand. Deliberately here rather than in a resolver: the brand is
+     * a property of the *request*, so recording it at this point means it is present on every
+     * operation and -- more importantly -- on transactions that **throw**, where a resolver-level
+     * call would never run. An errored request with no brand attached is unattributable.
+     *
+     * This is what makes the `omedaMatchedBy` / `omedaIdResolution` attributes decomposable by
+     * tenant. Without it, a rapid-identification that matched by email cannot be told apart from
+     * one publisher not having deployed the client change -- the two need completely different
+     * responses and looked identical in the first week of data.
+     *
+     * The brand already reaches the `apiRequest` mongo log below, but that cannot be faceted
+     * alongside transaction attributes, which is the whole point.
+     */
+    newrelic.addCustomAttributes({ omedaBrand: brand });
+
     const apiClient = new OmedaApiClient({
       appId,
       brand,
